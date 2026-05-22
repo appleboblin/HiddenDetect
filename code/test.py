@@ -187,23 +187,34 @@ def test(dataset,model_path,s = 16, e = 29):
             with torch.no_grad(): 
                 outputs = model(input_ids, images=images_tensor, image_sizes=images_size, output_hidden_states=True)              
                
-        
-        for i, r in enumerate(outputs.hidden_states[1:]):
+        for r in outputs.hidden_states[1:]:
             layer_output = norm(r)
-            logits = lm_head(layer_output)  
+            logits = lm_head(layer_output)
             next_token_logits = logits[:, -1, :]
             reference_tokens = token_one_hot.to(next_token_logits.device)
             cos_sim = N.cosine_similarity(next_token_logits, reference_tokens)
-            F.append(cos_sim.item())            
-        
-        F = F[s:e+1]
-        if F:             
-            aware_auc = np.trapz(np.array(F))  
-        else:                 
-            aware_auc = None
-        
-        label_all.append(sample['toxicity'])
-        aware_auc_all.append(aware_auc)
+            F.append(cos_sim.item())
+
+        label_all.append(sample["toxicity"])
+        aware_auc_all.append(np.array(F))
+
+    # Fisher discriminant - diagonal linear discriminat analysis
+    F_curves = np.stack(aware_auc_all)  # NxL?
+    labels_arr = np.array(label_all)
+
+    F_unsafe = F_curves[labels_arr == 1]
+    F_safe = F_curves[labels_arr != 1]
+    mean_diff = F_unsafe.mean(axis=0) - F_safe.mean(axis=0)
+
+    # variance of F at each layer
+    all_var = 0.5 * (F_unsafe.var(axis=0, ddof=1) + F_safe.var(axis=0, ddof=1))
+
+    # standardized mean difference per layer - signal / noise. 
+    # 1e-8 can be changed
+    w = mean_diff / (np.sqrt(all_var) + 1e-8)
+
+    # dot prodect to create a single value out of all layers
+    aware_auc_all = [float(np.dot(F_arr, w)) for F_arr in aware_auc_all]
 
     return label_all, aware_auc_all
 
