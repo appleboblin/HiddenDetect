@@ -154,6 +154,10 @@ def test(dataset,model_path,s = 16, e = 29):
     else:
         raise ValueError(f"Incorrect Model") 
     
+    model_device = getattr(model, "device", None)
+    if model_device is None:
+        model_device = next(model.parameters()).device
+
     label_all = []    
     aware_auc_all = []
 
@@ -172,7 +176,7 @@ def test(dataset,model_path,s = 16, e = 29):
             input_ids = (
                     tokenizer_image_token(prompt, tokenizer, IMAGE_TOKEN_INDEX, return_tensors="pt")
                     .unsqueeze(0)
-                    .cuda()
+                    .to(model_device)
                 )   
             with torch.no_grad():   
                 outputs = model(input_ids, images=None, image_sizes=None, output_hidden_states=True)        
@@ -181,7 +185,7 @@ def test(dataset,model_path,s = 16, e = 29):
             input_ids = (
                     tokenizer_image_token(prompt, tokenizer, IMAGE_TOKEN_INDEX, return_tensors="pt")
                     .unsqueeze(0)
-                    .cuda()
+                    .to(model_device)
                 )      
             images_tensor, images_size = prepare_imgs_tensor_both_cases(sample)
             with torch.no_grad(): 
@@ -218,20 +222,43 @@ def evaluate_AUROC(true_labels, scores):
     auroc = auc(fpr, tpr)
     return auroc      
 
+def build_available_datasets():
+    dataset_loaders = [
+        ("XSTest", load_XSTest),
+        ("FigTxt", load_FigTxt),
+        ("MM-SafetyBench + MM-Vet", lambda: load_mm_safety_bench_all() + load_mm_vet()),
+        ("FigImg + MM-Vet", lambda: load_FigImg() + load_mm_vet()),
+        ("JBV28K_JBtxt + MM-Vet", lambda: load_JailBreakV_JBtxt() + load_mm_vet()),
+        ("JBV28K_JBtxt_SDimg + MM-Vet", lambda: load_JailBreakV_JBtxt_SDimg() + load_mm_vet()),
+        ("Adversarial_Img + MM-Vet", lambda: load_adversarial_img() + random.sample(load_mm_vet(), 160)),
+    ]
+
+    datasets = {}
+    for dataset_name, loader in dataset_loaders:
+        try:
+            dataset = loader()
+            if not dataset:
+                raise ValueError("loader returned zero samples")
+            labels = {sample["toxicity"] for sample in dataset}
+            if labels != {0, 1}:
+                raise ValueError(f"expected both safe and unsafe labels, got {sorted(labels)}")
+            datasets[dataset_name] = dataset
+        except (FileNotFoundError, ValueError, OSError) as exc:
+            print(f"Skipping {dataset_name}: {exc}")
+
+    return datasets
+
 if __name__ == "__main__":   
     model_path = "model/llava-v1.6-vicuna-7b/"          
-    datasets = {}     
     results = {}   
 
-    
-    datasets["XSTest"] = load_XSTest()
-    datasets["FigTxt"] = load_FigTxt()    
-    datasets["MM-SafetyBench + MM-Vet"] = load_mm_safety_bench_all() + load_mm_vet()   
-    datasets["FigImg + MM-Vet"] = load_FigImg() + load_mm_vet() 
-    datasets["JBV28K_JBtxt + MM-Vet"] = load_JailBreakV_JBtxt() + load_mm_vet() 
-    datasets["JBV28K_JBtxt_SDimg + MM-Vet"] = load_JailBreakV_JBtxt_SDimg() + load_mm_vet()
-    datasets["Adversarial_Img + MM-Vet"] = load_adversarial_img() + random.sample(load_mm_vet(),160)        
+    datasets = build_available_datasets()
     total_datasets = len(datasets)    
+    if total_datasets == 0:
+        raise RuntimeError(
+            "No evaluation datasets are available. Download the benchmark data listed "
+            "in README.md, then rerun python ./code/test.py."
+        )
     print(f"Starting evaluation of {total_datasets} datasets...")
     
     for idx, (dataset_name, dataset) in enumerate(datasets.items(), 1):
