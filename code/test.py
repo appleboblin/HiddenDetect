@@ -198,26 +198,28 @@ def test(dataset,model_path,s = 16, e = 29):
         label_all.append(sample["toxicity"])
         aware_auc_all.append(np.array(F))
 
-    # Fisher discriminant - diagonal linear discriminat analysis
-    F_curves = np.stack(aware_auc_all)  # NxL?
+    # Diagonal Fisher LDA
+    # learn layer weights from labels then combine each sample layer cosine
+    # scores into one final score
+    F_curves = np.stack(aware_auc_all)  # NxL
     labels_arr = np.array(label_all)
 
     F_unsafe = F_curves[labels_arr == 1]
     F_safe = F_curves[labels_arr != 1]
     mean_diff = F_unsafe.mean(axis=0) - F_safe.mean(axis=0)
 
-    # variance of F at each layer
-    all_var = 0.5 * (F_unsafe.var(axis=0, ddof=1) + F_safe.var(axis=0, ddof=1))
+    # Average within class variance of F at each layer
+    avg_class_var = 0.5 * (F_unsafe.var(axis=0, ddof=1) + F_safe.var(axis=0, ddof=1))
 
-    # standardized mean difference per layer - signal / noise. 
+    # standardized mean difference per layer - signal / noise.
     # 1e-8 can be changed
-    w = mean_diff / (np.sqrt(all_var) + 1e-8)
+    w = mean_diff / (np.sqrt(avg_class_var) + 1e-8)
 
-    # dot prodect to create a single value out of all layers
-    aware_auc_all = [float(np.dot(F_arr, w)) for F_arr in aware_auc_all]
+    # project each per layer cosine curve onto Fisher weights
+    # (N, L) @ (L,) -> (N,): one detection score per sample
+    fisher_scores = (F_curves @ w).tolist()
 
-    return label_all, aware_auc_all
-
+    return label_all, fisher_scores
 
 def evaluate_AUPRC(true_labels, scores):
     precision_arr, recall_arr, threshold_arr = precision_recall_curve(true_labels, scores)
