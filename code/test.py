@@ -9,6 +9,7 @@ import re
 import random
 from sklearn.metrics import precision_recall_curve,auc
 from sklearn.metrics import roc_curve
+from sklearn.linear_model import LogisticRegression
 
 
 from llava.constants import (
@@ -198,28 +199,47 @@ def test(dataset,model_path,s = 16, e = 29):
         label_all.append(sample["toxicity"])
         aware_auc_all.append(np.array(F))
 
-    # Diagonal Fisher LDA
-    # learn layer weights from labels then combine each sample layer cosine
-    # scores into one final score
-    F_curves = np.stack(aware_auc_all)  # NxL
-    labels_arr = np.array(label_all)
+    FISHER = True
+    if FISHER:
+        # Diagonal Fisher LDA
+        # learn layer weights from labels then combine each sample layer cosine
+        # scores into one final score
+        F_curves = np.stack(aware_auc_all)  # NxL
+        labels_arr = np.array(label_all)
+    
+        F_unsafe = F_curves[labels_arr == 1]
+        F_safe = F_curves[labels_arr != 1]
+        mean_diff = F_unsafe.mean(axis=0) - F_safe.mean(axis=0)
+    
+        # Average within class variance of F at each layer
+        avg_class_var = 0.5 * (F_unsafe.var(axis=0, ddof=1) + F_safe.var(axis=0, ddof=1))
+    
+        # standardized mean difference per layer - signal / noise.
+        # 1e-8 can be changed
+        w = mean_diff / (np.sqrt(avg_class_var) + 1e-8)
+    
+        # project each per layer cosine curve onto Fisher weights
+        # (N, L) @ (L,) -> (N,): one detection score per sample
+        fisher_scores = (F_curves @ w).tolist()
+    
+        return label_all, fisher_scores
+        
+    LOGISTIC_REGRESSION = False
+    if LOGISTIC_REGRESSION:
+        F_curves = np.stack(aware_auc_all)  # (N, L)
+        labels_arr = np.array(label_all)
 
-    F_unsafe = F_curves[labels_arr == 1]
-    F_safe = F_curves[labels_arr != 1]
-    mean_diff = F_unsafe.mean(axis=0) - F_safe.mean(axis=0)
+        # L2-regularized via sklearn
+        clf = LogisticRegression(
+            penalty="l2",
+            C=0.5,
+            max_iter=1000,
+            class_weight=None,
+        ).fit(F_curves, labels_arr)
 
-    # Average within class variance of F at each layer
-    avg_class_var = 0.5 * (F_unsafe.var(axis=0, ddof=1) + F_safe.var(axis=0, ddof=1))
+        logreg_scores = clf.decision_function(F_curves).tolist()
 
-    # standardized mean difference per layer - signal / noise.
-    # 1e-8 can be changed
-    w = mean_diff / (np.sqrt(avg_class_var) + 1e-8)
-
-    # project each per layer cosine curve onto Fisher weights
-    # (N, L) @ (L,) -> (N,): one detection score per sample
-    fisher_scores = (F_curves @ w).tolist()
-
-    return label_all, fisher_scores
+        return label_all, logreg_scores
 
 def evaluate_AUPRC(true_labels, scores):
     precision_arr, recall_arr, threshold_arr = precision_recall_curve(true_labels, scores)
