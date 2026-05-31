@@ -30,7 +30,7 @@ Recommended NVIDIA target:
 - GPU request: `--gres=gpu:1`
 - Default GPU constraint: `--constraint=h100`
 - Optional GPU constraint: `--constraint=h200`
-- Default environment name: `hiddendetect-nvidia`
+- Default environment name: `llava`
 
 The implementation should document how to override the partition, account, wall time, model path, output path, and GPU constraint without editing Python code.
 
@@ -161,7 +161,7 @@ Note: if `props.major_minor` is not available in the installed PyTorch version, 
 #!/bin/bash
 set -euo pipefail
 
-ENV_NAME="${CONDA_ENV:-hiddendetect-nvidia}"
+ENV_NAME="${CONDA_ENV:-llava}"
 PYTHON_VERSION="${PYTHON_VERSION:-3.10}"
 
 if ! command -v conda >/dev/null 2>&1; then
@@ -259,7 +259,7 @@ Expected behavior:
 
 set -euo pipefail
 
-CONDA_ENV="${CONDA_ENV:-hiddendetect-nvidia}"
+CONDA_ENV="${CONDA_ENV:-llava}"
 MODEL_PATH="${MODEL_PATH:-model/llava-v1.6-vicuna-7b}"
 OUTPUT_PATH="${OUTPUT_PATH:-results/llava-result.csv}"
 LIMIT="${LIMIT:-}"

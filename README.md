@@ -54,9 +54,22 @@ pip install -r requirements.txt
 
 ## 🖥️ HPC NVIDIA GPU
 
+Use the HPC runbook for the full NVIDIA workflow, including LLaVA setup, SLURM submission, overrides, and troubleshooting:
+
+- [HPC NVIDIA End-to-End Runbook](docs/hpc-nvidia-runbook.md)
+
+Quick setup:
+
 ```bash
 git switch hpc-nvidia
 bash scripts/hpc/setup_nvidia_env.sh
+```
+
+The setup script creates a Conda environment named `llava`, installs LLaVA from a pinned local checkout under `src/llava`, then installs HiddenDetect dependencies. CUDA verification should run inside an interactive GPU allocation or a SLURM job, not on a login node:
+
+```bash
+conda activate llava
+python scripts/hpc/check_nvidia_cuda.py
 ```
 
 Smoke test:

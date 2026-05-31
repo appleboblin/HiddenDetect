@@ -10,7 +10,7 @@
 
 set -euo pipefail
 
-CONDA_ENV="${CONDA_ENV:-hiddendetect-nvidia}"
+CONDA_ENV="${CONDA_ENV:-llava}"
 MODEL_PATH="${MODEL_PATH:-model/llava-v1.6-vicuna-7b}"
 OUTPUT_PATH="${OUTPUT_PATH:-results/llava-result.csv}"
 LIMIT="${LIMIT:-}"

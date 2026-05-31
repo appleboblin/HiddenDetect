@@ -12,7 +12,7 @@
 - `scripts/hpc/check_nvidia_cuda.py`
   - Verifies CUDA visibility, required imports, and a small CUDA tensor matmul check.
 - `scripts/hpc/setup_nvidia_env.sh`
-  - Creates/activates Conda env and installs requirements for NVIDIA HPC runs.
+  - Creates/activates the `llava` Conda env, installs a local pinned LLaVA checkout, then installs HiddenDetect requirements for NVIDIA HPC runs.
 - `scripts/slurm/run_llava_eval.sbatch`
   - SLURM entrypoint for LLaVA evaluation on NVIDIA GPUs.
 - `scripts/slurm/run_qwen_eval.sbatch`
@@ -44,7 +44,7 @@
   - `MODEL_PATH`
   - `OUTPUT_PATH`
   - `LIMIT`
-  - Optional setup-script override: `PYTHON_VERSION`
+  - Optional setup-script overrides: `PYTHON_VERSION`, `LLAVA_REPO`, `LLAVA_DIR`, `LLAVA_COMMIT`, `RUN_CUDA_CHECK`
 
 ## Validation already performed
 
@@ -52,4 +52,3 @@
   - `python -m py_compile code/test.py code/test_qwen.py scripts/hpc/check_nvidia_cuda.py`
 - Shell/SLURM script syntax validation:
   - `bash -n scripts/hpc/setup_nvidia_env.sh scripts/slurm/run_llava_eval.sbatch scripts/slurm/run_qwen_eval.sbatch`
-

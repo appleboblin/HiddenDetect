@@ -10,7 +10,7 @@
 
 set -euo pipefail
 
-CONDA_ENV="${CONDA_ENV:-hiddendetect-nvidia}"
+CONDA_ENV="${CONDA_ENV:-llava}"
 MODEL_PATH="${MODEL_PATH:-model/Qwen-VL-Chat}"
 OUTPUT_PATH="${OUTPUT_PATH:-results/qwen-result.csv}"
 LIMIT="${LIMIT:-}"

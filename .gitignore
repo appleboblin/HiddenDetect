@@ -8,6 +8,7 @@ __pycache__/
 env/
 venv/
 
+src/llava/
 model/
 models/
 results/
