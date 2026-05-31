@@ -120,10 +120,17 @@ Model/output override:
 MODEL_PATH=/path/to/model OUTPUT_PATH=/path/to/results.csv sbatch scripts/slurm/run_llava_eval.sbatch
 ```
 
-You can also change the Conda env used by batch jobs:
+You can also change the Conda env used by batch jobs by name:
 
 ```bash
 CONDA_ENV=my-env sbatch scripts/slurm/run_llava_eval.sbatch
+```
+
+If the batch job cannot find `torch`, submit with the full environment prefix
+so SLURM activates the exact environment that contains the dependencies:
+
+```bash
+CONDA_ENV_PREFIX=/full/path/to/the/env sbatch scripts/slurm/run_llava_eval.sbatch
 ```
 
 ## 7) Where results land
@@ -147,6 +154,8 @@ head -n 5 results/qwen-result.csv
   - Re-run `bash scripts/hpc/setup_nvidia_env.sh`. The script reuses `src/llava`, re-checks the pinned commit, upgrades build tooling, and repeats `pip install -e src/llava`.
 - Existing half-created Conda environment
   - Re-run the setup script first. If the environment is broken, remove it with `conda env remove -n llava`, then run `bash scripts/hpc/setup_nvidia_env.sh` again. Use the same name you passed through `CONDA_ENV` if you overrode the default.
+- `ModuleNotFoundError: No module named 'torch'` / `Activated Python environment does not contain torch`
+  - The batch job activated a Python environment that does not have the project dependencies. Submit with `CONDA_ENV_PREFIX=/full/path/to/the/env sbatch scripts/slurm/run_llava_eval.sbatch`, or install dependencies into the printed `Conda prefix` with `python -m pip install -r requirements.txt`.
 - Existing `src/llava` checkout
   - The setup script reuses it and checks out `LLAVA_COMMIT`. If `src/llava` exists but is not a Git checkout, move it aside or set `LLAVA_DIR=/path/to/LLaVA`.
 - `cuda_available=False` in CUDA check
