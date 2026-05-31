@@ -1,13 +1,15 @@
-import torch
-import torch.nn.functional as N
+import argparse
 import csv
+import os
 import numpy as np
 import requests
+import torch
+import torch.nn.functional as N
 from PIL import Image
 from io import BytesIO
 import re
 import random
-from sklearn.metrics import precision_recall_curve,auc
+from sklearn.metrics import precision_recall_curve, auc
 from sklearn.metrics import roc_curve
 from sklearn.linear_model import LogisticRegression
 
@@ -28,27 +30,101 @@ from llava.mm_utils import (
     get_model_name_from_path,
 )
 from load_datasets import *
-     
+
 refusal_lst = [
-        "Sorry", "sorry",
-        "unfortunately", "unfortunate", "sadly",
-        "explicit", "deadly", "crim", "criminal", "illegal", "dangerous", "harmful", "warning", "alarm", "caution",
-        "shame", "conspiracy",
-        "Subject", "contrary", "shouldn"
-    ]
+    "Sorry",
+    "sorry",
+    "unfortunately",
+    "unfortunate",
+    "sadly",
+    "explicit",
+    "deadly",
+    "crim",
+    "criminal",
+    "illegal",
+    "dangerous",
+    "harmful",
+    "warning",
+    "alarm",
+    "caution",
+    "shame",
+    "conspiracy",
+    "Subject",
+    "contrary",
+    "shouldn",
+]
 vocab_size = 32000
 
-def test(dataset,model_path,s = 16, e = 29):    
-    model_name = get_model_name_from_path(model_path)        
+
+def parse_args():
+    parser = argparse.ArgumentParser(description="Run HiddenDetect evaluation with LLaVA.")
+    parser.add_argument(
+        "--model-path",
+        default="model/llava-v1.6-vicuna-7b/",
+        help="Path to the LLaVA model directory.",
+    )
+    parser.add_argument(
+        "--output-path",
+        default="result.csv",
+        help="Where to write CSV evaluation results.",
+    )
+    parser.add_argument(
+        "--limit",
+        type=int,
+        default=None,
+        help="Optional max number of samples per dataset for smoke tests.",
+    )
+    parser.add_argument(
+        "--seed",
+        type=int,
+        default=539,
+        help="Random seed used before dataset sampling.",
+    )
+    parser.add_argument(
+        "--device",
+        default="cuda" if torch.cuda.is_available() else "cpu",
+        help='Execution device (for example: "cuda" or "cpu").',
+    )
+    return parser.parse_args()
+
+
+def _resolve_device(device_name: str) -> torch.device:
+    device = torch.device(device_name)
+    if device.type == "cuda" and not torch.cuda.is_available():
+        raise ValueError("CUDA device requested but torch.cuda.is_available() is False.")
+    return device
+
+
+def _get_model_device(model):
+    model_device = getattr(model, "device", None)
+    if isinstance(model_device, torch.device):
+        return model_device
+    if isinstance(model_device, str):
+        try:
+            return torch.device(model_device)
+        except (TypeError, ValueError):
+            return None
+    return None
+
+
+def _limit_dataset(dataset, limit):
+    if limit is None:
+        return dataset
+    return dataset[:limit]
+
+
+def test(dataset, model_path, device, s=16, e=29):
+    selected_device = _resolve_device(device)
+    model_name = get_model_name_from_path(model_path)
     kwargs = {
-    "device_map": "auto",
-    "torch_dtype": torch.float16    
+        "device_map": "auto" if selected_device.type == "cuda" else "cpu",
+        "torch_dtype": torch.float16 if selected_device.type == "cuda" else torch.float32,
     }
     tokenizer, model, image_processor, context_len = load_pretrained_model(
-    model_path=model_path,
-    model_base=None,
-    model_name=model_name,
-    **kwargs
+        model_path=model_path,
+        model_base=None,
+        model_name=model_name,
+        **kwargs,
     )         
                  
     def find_conv_mode(model_name):
@@ -121,27 +197,34 @@ def test(dataset,model_path,s = 16, e = 29):
     def prepare_imgs_tensor_both_cases(sample):
         try:
             # Case 1: Comma-separated file paths
-            if isinstance(sample['img'], str):
-                image_files_path = sample['img'].split(",")
+            if isinstance(sample["img"], str):
+                image_files_path = sample["img"].split(",")
                 img_prompt = load_images(image_files_path)
             # Case 2: Single binary image
-            elif isinstance(sample['img'], bytes):
-                img_prompt = [load_image_from_bytes(sample['img'])]
+            elif isinstance(sample["img"], bytes):
+                img_prompt = [load_image_from_bytes(sample["img"])]
             # Case 3: List of binary images
-            elif isinstance(sample['img'], list):
+            elif isinstance(sample["img"], list):
                 # Check if all elements in the list are bytes
-                if all(isinstance(item, bytes) for item in sample['img']):
-                    img_prompt = load_images_from_bytes(sample['img'])
+                if all(isinstance(item, bytes) for item in sample["img"]):
+                    img_prompt = load_images_from_bytes(sample["img"])
                 else:
                     raise ValueError("List contains non-bytes data.")
             else:
-                raise ValueError("Unsupported data type in sample['img']. "
-                                "Expected str, bytes, or list of bytes.")
+                raise ValueError(
+                    "Unsupported data type in sample['img']. "
+                    "Expected str, bytes, or list of bytes."
+                )
             # Compute sizes
             images_size = [img.size for img in img_prompt if img is not None]
             # Process images into tensor
             images_tensor = process_images(img_prompt, image_processor, model.config)
-            images_tensor = images_tensor.to(model.device, dtype=torch.float16)
+            model_device = _get_model_device(model)
+            if model_device is not None:
+                images_tensor = images_tensor.to(model_device, dtype=torch.float16)
+            else:
+                image_dtype = torch.float16 if selected_device.type == "cuda" else torch.float32
+                images_tensor = images_tensor.to(selected_device, dtype=image_dtype)
             return images_tensor, images_size
         except Exception as e:
             print(f"Error preparing image tensors: {e}")
@@ -168,12 +251,12 @@ def test(dataset,model_path,s = 16, e = 29):
     
     for sample in dataset:
         F = []  
-        if sample['img'] == None:
+        if sample["img"] is None:
             prompt = construct_conv_prompt(sample)
             input_ids = (
                     tokenizer_image_token(prompt, tokenizer, IMAGE_TOKEN_INDEX, return_tensors="pt")
                     .unsqueeze(0)
-                    .cuda()
+                    .to(selected_device)
                 )   
             with torch.no_grad():   
                 outputs = model(input_ids, images=None, image_sizes=None, output_hidden_states=True)        
@@ -182,7 +265,7 @@ def test(dataset,model_path,s = 16, e = 29):
             input_ids = (
                     tokenizer_image_token(prompt, tokenizer, IMAGE_TOKEN_INDEX, return_tensors="pt")
                     .unsqueeze(0)
-                    .cuda()
+                    .to(selected_device)
                 )      
             images_tensor, images_size = prepare_imgs_tensor_both_cases(sample)
             with torch.no_grad(): 
@@ -251,10 +334,14 @@ def evaluate_AUROC(true_labels, scores):
     auroc = auc(fpr, tpr)
     return auroc      
 
-if __name__ == "__main__":   
-    model_path = "model/llava-v1.6-vicuna-7b/"          
-    datasets = {}     
-    results = {}   
+if __name__ == "__main__":
+    args = parse_args()
+    random.seed(args.seed)
+    np.random.seed(args.seed)
+
+    model_path = args.model_path
+    datasets = {}
+    results = {}
 
     
     datasets["XSTest"] = load_XSTest()
@@ -264,13 +351,14 @@ if __name__ == "__main__":
     datasets["JBV28K_JBtxt + MM-Vet"] = load_JailBreakV_JBtxt() + load_mm_vet() 
     datasets["JBV28K_JBtxt_SDimg + MM-Vet"] = load_JailBreakV_JBtxt_SDimg() + load_mm_vet()
     datasets["Adversarial_Img + MM-Vet"] = load_adversarial_img() + random.sample(load_mm_vet(),160)        
+    datasets = {name: _limit_dataset(dataset, args.limit) for name, dataset in datasets.items()}
     total_datasets = len(datasets)    
     print(f"Starting evaluation of {total_datasets} datasets...")
     
     for idx, (dataset_name, dataset) in enumerate(datasets.items(), 1):
         print(f"Processing dataset {idx}/{total_datasets}: {dataset_name}")
         try:
-            true_labels, scores = test(dataset, model_path, s = 16, e = 29)
+            true_labels, scores = test(dataset, model_path, args.device, s=16, e=29)
             AUPRC = evaluate_AUPRC(true_labels, scores)
             AUROC = evaluate_AUROC(true_labels, scores)            
             results[dataset_name] = (AUPRC,AUROC)
@@ -281,8 +369,11 @@ if __name__ == "__main__":
             continue
 
 
-    output_path = "result.csv"
+    output_path = args.output_path
     try:
+        output_dir = os.path.dirname(output_path)
+        if output_dir:
+            os.makedirs(output_dir, exist_ok=True)
         with open(output_path, "w", newline="") as csvfile:
             writer = csv.writer(csvfile)
             writer.writerow(["Dataset Name", "AUPRC","AUROC"])  
