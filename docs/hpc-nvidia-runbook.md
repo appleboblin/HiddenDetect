@@ -3,17 +3,18 @@
 ## Prerequisites
 
 - You have access to an NVIDIA GPU SLURM partition (default scripts use `dgxh` and `--constraint=h100`).
-- `conda` is available on the cluster (module-loaded if required by your site).
+- `conda` is available on the cluster. The batch scripts load the `conda` module before activating the environment.
 - `sbatch` is available.
 - Model weights are staged locally (for example under `model/`), or you know the path to pass via `MODEL_PATH`.
 - Evaluation data is staged under `data/` as expected by the evaluation scripts.
 
 ## 1) Clone and checkout
 
+Repository branch: <https://github.com/appleboblin/HiddenDetect/tree/hpc-nvidia>
+
 ```bash
-git clone https://github.com/leigest519/HiddenDetect.git
+git clone --branch hpc-nvidia https://github.com/appleboblin/HiddenDetect.git
 cd HiddenDetect
-git switch hpc-nvidia
 ```
 
 ## 2) Environment setup
@@ -114,11 +115,10 @@ head -n 5 results/qwen-result.csv
 ## 9) Troubleshooting
 
 - `conda: command not found`
-  - Load your cluster Conda/Miniconda module, then re-run setup.
+  - Confirm the cluster provides a `conda` module and that `module load conda` works in the batch environment.
 - `cuda_available=False` in CUDA check
   - Verify you are on a GPU node/allocation and your PyTorch CUDA build is available in that environment.
 - Model path errors (`No such file or directory` / model load failure)
   - Confirm model files exist and pass `MODEL_PATH=/absolute/or/repo-relative/path`.
 - `sbatch` rejects submission due to account/partition/QOS
   - Re-submit with explicit scheduler flags such as `-A <account> -p <partition>`.
-

@@ -6,6 +6,7 @@
 #SBATCH -t 02:00:00
 #SBATCH -o logs/%x-%j.out
 #SBATCH -e logs/%x-%j.err
+#SBATCH --mail-type=FAIL,END
 
 set -euo pipefail
 
@@ -16,6 +17,7 @@ LIMIT="${LIMIT:-}"
 
 mkdir -p logs results
 
+module load conda
 eval "$(conda shell.bash hook)"
 conda activate "${CONDA_ENV}"
 
