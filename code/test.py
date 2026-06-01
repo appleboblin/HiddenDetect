@@ -1,6 +1,4 @@
 import argparse
-import csv
-import os
 import numpy as np
 import requests
 import torch
@@ -13,6 +11,7 @@ from sklearn.metrics import precision_recall_curve, auc
 from sklearn.metrics import roc_curve
 from sklearn.linear_model import LogisticRegression
 
+from eval_runtime import finish_evaluation, validate_model_path
 
 from llava.constants import (
     IMAGE_TOKEN_INDEX,
@@ -339,9 +338,11 @@ if __name__ == "__main__":
     random.seed(args.seed)
     np.random.seed(args.seed)
 
-    model_path = args.model_path
+    model_path = validate_model_path(args.model_path)
+    print(f"Using model path: {model_path}")
     datasets = {}
     results = {}
+    failed_datasets = []
 
     
     datasets["XSTest"] = load_XSTest()
@@ -366,23 +367,10 @@ if __name__ == "__main__":
             print(f"AUROC for {dataset_name}: {AUROC}")
         except Exception as e:
             print(f"Error processing {dataset_name}: {str(e)}")
+            failed_datasets.append(dataset_name)
             continue
 
-
-    output_path = args.output_path
-    try:
-        output_dir = os.path.dirname(output_path)
-        if output_dir:
-            os.makedirs(output_dir, exist_ok=True)
-        with open(output_path, "w", newline="") as csvfile:
-            writer = csv.writer(csvfile)
-            writer.writerow(["Dataset Name", "AUPRC","AUROC"])  
-            for dataset_name, result in results.items():
-                if result is not None:  
-                    writer.writerow([dataset_name, f"{result[0]:.4f}", f"{result[1]:.4f}"])
-        print(f"Results successfully written to {output_path}")
-    except Exception as e:
-        print(f"Error writing to CSV: {str(e)}")
+    finish_evaluation(args.output_path, results, failed_datasets)
         
 
     

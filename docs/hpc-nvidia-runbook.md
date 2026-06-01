@@ -162,5 +162,7 @@ head -n 5 results/qwen-result.csv
   - On login nodes this is expected. Run `python scripts/hpc/check_nvidia_cuda.py` inside an interactive GPU allocation or rely on the SLURM scripts, which run the check after the job receives a GPU.
 - Model path errors (`No such file or directory` / model load failure)
   - Confirm model files exist and pass `MODEL_PATH=/absolute/or/repo-relative/path`.
+  - For the default LLaVA run, `model/llava-v1.6-vicuna-7b/config.json` must exist before submission.
+  - Empty model directories from interrupted downloads now fail immediately before datasets are loaded or result CSVs are written. Re-stage the model files or point `MODEL_PATH` at a complete local model directory.
 - `sbatch` rejects submission due to account/partition/QOS
   - Re-submit with explicit scheduler flags such as `-A <account> -p <partition>`.

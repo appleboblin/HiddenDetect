@@ -84,6 +84,22 @@ if [[ -n "${LIMIT}" ]]; then
   CMD+=(--limit "${LIMIT}")
 fi
 
+case "${MODEL_PATH}" in
+  /*) RESOLVED_MODEL_PATH="${MODEL_PATH}" ;;
+  ./*|../*|model/*|models/*) RESOLVED_MODEL_PATH="$(pwd)/${MODEL_PATH}" ;;
+  *) RESOLVED_MODEL_PATH="${MODEL_PATH}" ;;
+esac
+case "${OUTPUT_PATH}" in
+  /*) RESOLVED_OUTPUT_PATH="${OUTPUT_PATH}" ;;
+  *) RESOLVED_OUTPUT_PATH="$(pwd)/${OUTPUT_PATH}" ;;
+esac
+
+echo "MODEL_PATH: ${MODEL_PATH}"
+echo "Resolved MODEL_PATH: ${RESOLVED_MODEL_PATH}"
+echo "OUTPUT_PATH: ${OUTPUT_PATH}"
+echo "Resolved OUTPUT_PATH: ${RESOLVED_OUTPUT_PATH}"
+echo "LIMIT: ${LIMIT:-unset}"
+
 "${CMD[@]}"
 
 echo "End: $(date)"
