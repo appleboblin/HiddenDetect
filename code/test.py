@@ -9,8 +9,8 @@ import re
 import random
 from sklearn.metrics import precision_recall_curve, auc
 from sklearn.metrics import roc_curve
-from sklearn.linear_model import LogisticRegression
 
+from eval_scoring import SCORING_MODES, compute_detection_scores
 from eval_runtime import finish_evaluation, validate_model_path
 
 from llava.constants import (
@@ -84,6 +84,21 @@ def parse_args():
         default="cuda" if torch.cuda.is_available() else "cpu",
         help='Execution device (for example: "cuda" or "cpu").',
     )
+    parser.add_argument(
+        "--scoring-mode",
+        choices=SCORING_MODES,
+        default="fisher",
+        help=(
+            "How to convert per-layer refusal scores into one detection score. "
+            "Supervised modes use out-of-fold scoring to avoid train/test leakage."
+        ),
+    )
+    parser.add_argument(
+        "--n-folds",
+        type=int,
+        default=5,
+        help="Number of stratified folds for supervised scoring modes.",
+    )
     return parser.parse_args()
 
 
@@ -112,7 +127,16 @@ def _limit_dataset(dataset, limit):
     return dataset[:limit]
 
 
-def test(dataset, model_path, device, s=16, e=29):
+def test(
+    dataset,
+    model_path,
+    device,
+    scoring_mode="fisher",
+    n_folds=5,
+    seed=539,
+    s=16,
+    e=29,
+):
     selected_device = _resolve_device(device)
     model_name = get_model_name_from_path(model_path)
     kwargs = {
@@ -281,47 +305,16 @@ def test(dataset, model_path, device, s=16, e=29):
         label_all.append(sample["toxicity"])
         aware_auc_all.append(np.array(F))
 
-    FISHER = True
-    if FISHER:
-        # Diagonal Fisher LDA
-        # learn layer weights from labels then combine each sample layer cosine
-        # scores into one final score
-        F_curves = np.stack(aware_auc_all)  # NxL
-        labels_arr = np.array(label_all)
-    
-        F_unsafe = F_curves[labels_arr == 1]
-        F_safe = F_curves[labels_arr != 1]
-        mean_diff = F_unsafe.mean(axis=0) - F_safe.mean(axis=0)
-    
-        # Average within class variance of F at each layer
-        avg_class_var = 0.5 * (F_unsafe.var(axis=0, ddof=1) + F_safe.var(axis=0, ddof=1))
-    
-        # standardized mean difference per layer - signal / noise.
-        # 1e-8 can be changed
-        w = mean_diff / (np.sqrt(avg_class_var) + 1e-8)
-    
-        # project each per layer cosine curve onto Fisher weights
-        # (N, L) @ (L,) -> (N,): one detection score per sample
-        fisher_scores = (F_curves @ w).tolist()
-    
-        return label_all, fisher_scores
-        
-    LOGISTIC_REGRESSION = False
-    if LOGISTIC_REGRESSION:
-        F_curves = np.stack(aware_auc_all)  # (N, L)
-        labels_arr = np.array(label_all)
-
-        # L2-regularized via sklearn
-        clf = LogisticRegression(
-            penalty="l2",
-            C=0.5,
-            max_iter=1000,
-            class_weight=None,
-        ).fit(F_curves, labels_arr)
-
-        logreg_scores = clf.decision_function(F_curves).tolist()
-
-        return label_all, logreg_scores
+    scores = compute_detection_scores(
+        aware_auc_all,
+        label_all,
+        mode=scoring_mode,
+        n_folds=n_folds,
+        seed=seed,
+        layer_start=s,
+        layer_end=e,
+    )
+    return label_all, scores
 
 def evaluate_AUPRC(true_labels, scores):
     precision_arr, recall_arr, threshold_arr = precision_recall_curve(true_labels, scores)
@@ -359,7 +352,16 @@ if __name__ == "__main__":
     for idx, (dataset_name, dataset) in enumerate(datasets.items(), 1):
         print(f"Processing dataset {idx}/{total_datasets}: {dataset_name}")
         try:
-            true_labels, scores = test(dataset, model_path, args.device, s=16, e=29)
+            true_labels, scores = test(
+                dataset,
+                model_path,
+                args.device,
+                scoring_mode=args.scoring_mode,
+                n_folds=args.n_folds,
+                seed=args.seed,
+                s=16,
+                e=29,
+            )
             AUPRC = evaluate_AUPRC(true_labels, scores)
             AUROC = evaluate_AUROC(true_labels, scores)            
             results[dataset_name] = (AUPRC,AUROC)
