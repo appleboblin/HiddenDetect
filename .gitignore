@@ -21,6 +21,11 @@ slurm-*.out
 data/MM-SafetyBench/
 data/VAE/
 data/xstest-v2-copy/
+data/FigStep/safebench.csv
 data/FigStep/FigImg/
 data/JailBreakV_28K/llm_transfer_attack/
+data/**/*.png
+data/**/*.jpg
+data/**/*.jpeg
+data/**/*.webp
 data/few_shot/
