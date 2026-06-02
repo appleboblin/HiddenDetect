@@ -15,6 +15,7 @@ CONDA_ENV="${CONDA_ENV:-llava}"
 MODEL_PATH="${MODEL_PATH:-model/llava-v1.6-vicuna-7b}"
 OUTPUT_PATH="${OUTPUT_PATH:-results/llava-result.csv}"
 LIMIT="${LIMIT:-}"
+FISHER_EPSILON="${FISHER_EPSILON:-1e-8}"
 
 cd "${SLURM_SUBMIT_DIR:-$(pwd)}"
 mkdir -p logs results
@@ -79,7 +80,12 @@ PY
 
 "${PYTHON_BIN}" scripts/hpc/check_nvidia_cuda.py
 
-CMD=("${PYTHON_BIN}" code/test.py --model-path "${MODEL_PATH}" --output-path "${OUTPUT_PATH}")
+CMD=(
+  "${PYTHON_BIN}" code/test.py
+  --model-path "${MODEL_PATH}"
+  --output-path "${OUTPUT_PATH}"
+  --fisher-epsilon "${FISHER_EPSILON}"
+)
 if [[ -n "${LIMIT}" ]]; then
   CMD+=(--limit "${LIMIT}")
 fi
@@ -99,6 +105,7 @@ echo "Resolved MODEL_PATH: ${RESOLVED_MODEL_PATH}"
 echo "OUTPUT_PATH: ${OUTPUT_PATH}"
 echo "Resolved OUTPUT_PATH: ${RESOLVED_OUTPUT_PATH}"
 echo "LIMIT: ${LIMIT:-unset}"
+echo "FISHER_EPSILON: ${FISHER_EPSILON}"
 
 "${CMD[@]}"
 

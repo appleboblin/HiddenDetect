@@ -80,6 +80,36 @@ class EvalScoringTests(unittest.TestCase):
         self.assertEqual(len(scores), len(labels))
         self.assertTrue(all(isinstance(score, float) for score in scores))
 
+    def test_fisher_epsilon_can_be_configured(self) -> None:
+        curves = np.array(
+            [
+                [0.0, 0.0],
+                [0.0, 0.0],
+                [1.0, 0.0],
+                [1.0, 0.0],
+            ]
+        )
+        labels = np.array([0, 0, 1, 1])
+
+        default_scores = compute_detection_scores(
+            curves,
+            labels,
+            mode="fisher",
+            n_folds=2,
+            seed=539,
+            fisher_epsilon=1e-8,
+        )
+        smaller_epsilon_scores = compute_detection_scores(
+            curves,
+            labels,
+            mode="fisher",
+            n_folds=2,
+            seed=539,
+            fisher_epsilon=1e-12,
+        )
+
+        self.assertGreater(max(smaller_epsilon_scores), max(default_scores))
+
     def test_supervised_modes_reject_single_sample_class(self) -> None:
         curves = np.array([[0.0, 0.1], [0.2, 0.3], [1.0, 1.1]])
         labels = np.array([0, 0, 1])

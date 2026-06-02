@@ -4,6 +4,7 @@ from sklearn.model_selection import StratifiedKFold
 
 
 SCORING_MODES = ("trapz", "fisher", "logreg")
+DEFAULT_FISHER_EPSILON = 1e-8
 
 
 def _as_2d_curves(f_curves) -> np.ndarray:
@@ -58,7 +59,19 @@ def _fold_count(labels: np.ndarray, requested_folds: int) -> int:
     return min(int(requested_folds), min_class_count)
 
 
-def _fisher_scores(x_train: np.ndarray, y_train: np.ndarray, x_test: np.ndarray) -> np.ndarray:
+def _validate_fisher_epsilon(fisher_epsilon: float) -> float:
+    fisher_epsilon = float(fisher_epsilon)
+    if not np.isfinite(fisher_epsilon) or fisher_epsilon <= 0:
+        raise ValueError("fisher_epsilon must be a positive finite value.")
+    return fisher_epsilon
+
+
+def _fisher_scores(
+    x_train: np.ndarray,
+    y_train: np.ndarray,
+    x_test: np.ndarray,
+    fisher_epsilon: float,
+) -> np.ndarray:
     unsafe_curves = x_train[y_train == 1]
     safe_curves = x_train[y_train != 1]
     if unsafe_curves.shape[0] == 0 or safe_curves.shape[0] == 0:
@@ -66,7 +79,7 @@ def _fisher_scores(x_train: np.ndarray, y_train: np.ndarray, x_test: np.ndarray)
 
     mean_diff = unsafe_curves.mean(axis=0) - safe_curves.mean(axis=0)
     avg_class_var = 0.5 * (unsafe_curves.var(axis=0) + safe_curves.var(axis=0))
-    weights = mean_diff / (np.sqrt(avg_class_var) + 1e-8)
+    weights = mean_diff / (np.sqrt(avg_class_var) + fisher_epsilon)
     return x_test @ weights
 
 
@@ -76,6 +89,7 @@ def _supervised_out_of_fold_scores(
     mode: str,
     n_folds: int,
     seed: int,
+    fisher_epsilon: float,
 ) -> list[float]:
     split_count = _fold_count(labels, n_folds)
     splitter = StratifiedKFold(n_splits=split_count, shuffle=True, random_state=seed)
@@ -95,7 +109,7 @@ def _supervised_out_of_fold_scores(
             ).fit(x_train, y_train)
             fold_scores = clf.decision_function(x_test)
         elif mode == "fisher":
-            fold_scores = _fisher_scores(x_train, y_train, x_test)
+            fold_scores = _fisher_scores(x_train, y_train, x_test, fisher_epsilon)
         else:
             raise ValueError(f"Unsupported supervised scoring mode {mode!r}.")
 
@@ -112,6 +126,7 @@ def compute_detection_scores(
     seed: int = 539,
     layer_start: int = 16,
     layer_end: int = 29,
+    fisher_epsilon: float = DEFAULT_FISHER_EPSILON,
 ) -> list[float]:
     curves = _as_2d_curves(f_curves)
     labels_arr = _as_labels(labels, curves.shape[0])
@@ -121,4 +136,14 @@ def compute_detection_scores(
         selected_curves = _select_layers(curves, layer_start, layer_end)
         return [float(np.trapz(curve)) for curve in selected_curves]
 
-    return _supervised_out_of_fold_scores(curves, labels_arr, mode, n_folds, seed)
+    if mode == "fisher":
+        fisher_epsilon = _validate_fisher_epsilon(fisher_epsilon)
+
+    return _supervised_out_of_fold_scores(
+        curves,
+        labels_arr,
+        mode,
+        n_folds,
+        seed,
+        fisher_epsilon,
+    )

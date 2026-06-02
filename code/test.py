@@ -10,7 +10,7 @@ import random
 from sklearn.metrics import precision_recall_curve, auc
 from sklearn.metrics import roc_curve
 
-from eval_scoring import SCORING_MODES, compute_detection_scores
+from eval_scoring import DEFAULT_FISHER_EPSILON, SCORING_MODES, compute_detection_scores
 from eval_runtime import finish_evaluation, validate_model_path
 
 from llava.constants import (
@@ -99,6 +99,15 @@ def parse_args():
         default=5,
         help="Number of stratified folds for supervised scoring modes.",
     )
+    parser.add_argument(
+        "--fisher-epsilon",
+        type=float,
+        default=DEFAULT_FISHER_EPSILON,
+        help=(
+            "Positive denominator epsilon for Fisher scoring. "
+            "Ignored unless --scoring-mode fisher."
+        ),
+    )
     return parser.parse_args()
 
 
@@ -133,6 +142,7 @@ def test(
     device,
     scoring_mode="fisher",
     n_folds=5,
+    fisher_epsilon=DEFAULT_FISHER_EPSILON,
     seed=539,
     s=16,
     e=29,
@@ -313,6 +323,7 @@ def test(
         seed=seed,
         layer_start=s,
         layer_end=e,
+        fisher_epsilon=fisher_epsilon,
     )
     return label_all, scores
 
@@ -358,6 +369,7 @@ if __name__ == "__main__":
                 args.device,
                 scoring_mode=args.scoring_mode,
                 n_folds=args.n_folds,
+                fisher_epsilon=args.fisher_epsilon,
                 seed=args.seed,
                 s=16,
                 e=29,
