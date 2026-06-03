@@ -5,6 +5,10 @@ from sklearn.model_selection import StratifiedKFold
 
 SCORING_MODES = ("trapz", "fisher", "logreg")
 DEFAULT_FISHER_EPSILON = 1e-8
+DEFAULT_LOGREG_C = 0.5
+DEFAULT_LAYER_START = 16
+DEFAULT_LAYER_END = 29
+SUPERVISED_LAYER_SCOPES = ("all", "selected")
 
 
 def _as_2d_curves(f_curves) -> np.ndarray:
@@ -66,6 +70,22 @@ def _validate_fisher_epsilon(fisher_epsilon: float) -> float:
     return fisher_epsilon
 
 
+def _validate_logreg_c(logreg_c: float) -> float:
+    logreg_c = float(logreg_c)
+    if not np.isfinite(logreg_c) or logreg_c <= 0:
+        raise ValueError("logreg_c must be a positive finite value.")
+    return logreg_c
+
+
+def _validate_supervised_layer_scope(supervised_layer_scope: str) -> str:
+    if supervised_layer_scope not in SUPERVISED_LAYER_SCOPES:
+        raise ValueError(
+            "Unknown supervised_layer_scope "
+            f"{supervised_layer_scope!r}; expected one of {SUPERVISED_LAYER_SCOPES}."
+        )
+    return supervised_layer_scope
+
+
 def _fisher_scores(
     x_train: np.ndarray,
     y_train: np.ndarray,
@@ -90,6 +110,7 @@ def _supervised_out_of_fold_scores(
     n_folds: int,
     seed: int,
     fisher_epsilon: float,
+    logreg_c: float,
 ) -> list[float]:
     split_count = _fold_count(labels, n_folds)
     splitter = StratifiedKFold(n_splits=split_count, shuffle=True, random_state=seed)
@@ -103,7 +124,7 @@ def _supervised_out_of_fold_scores(
         if mode == "logreg":
             clf = LogisticRegression(
                 penalty="l2",
-                C=0.5,
+                C=logreg_c,
                 max_iter=1000,
                 class_weight=None,
             ).fit(x_train, y_train)
@@ -124,13 +145,16 @@ def compute_detection_scores(
     mode: str,
     n_folds: int = 5,
     seed: int = 539,
-    layer_start: int = 16,
-    layer_end: int = 29,
+    layer_start: int = DEFAULT_LAYER_START,
+    layer_end: int = DEFAULT_LAYER_END,
     fisher_epsilon: float = DEFAULT_FISHER_EPSILON,
+    logreg_c: float = DEFAULT_LOGREG_C,
+    supervised_layer_scope: str = "all",
 ) -> list[float]:
     curves = _as_2d_curves(f_curves)
     labels_arr = _as_labels(labels, curves.shape[0])
     mode = _validate_mode(mode)
+    supervised_layer_scope = _validate_supervised_layer_scope(supervised_layer_scope)
 
     if mode == "trapz":
         selected_curves = _select_layers(curves, layer_start, layer_end)
@@ -138,6 +162,11 @@ def compute_detection_scores(
 
     if mode == "fisher":
         fisher_epsilon = _validate_fisher_epsilon(fisher_epsilon)
+    elif mode == "logreg":
+        logreg_c = _validate_logreg_c(logreg_c)
+
+    if supervised_layer_scope == "selected":
+        curves = _select_layers(curves, layer_start, layer_end)
 
     return _supervised_out_of_fold_scores(
         curves,
@@ -146,4 +175,5 @@ def compute_detection_scores(
         n_folds,
         seed,
         fisher_epsilon,
+        logreg_c,
     )

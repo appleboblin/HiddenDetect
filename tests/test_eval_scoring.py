@@ -62,6 +62,137 @@ class EvalScoringTests(unittest.TestCase):
         self.assertEqual({tuple(row) for row in curves.tolist()}, set(scored_rows))
         self.assertTrue(all(len(rows) == 4 for rows in fit_rows))
 
+    def test_logreg_c_can_be_configured(self) -> None:
+        curves = np.arange(24, dtype=float).reshape(6, 4)
+        labels = np.array([0, 0, 0, 1, 1, 1])
+        configured_c_values = []
+
+        class RecordingLogisticRegression:
+            def __init__(self, **kwargs):
+                configured_c_values.append(kwargs["C"])
+
+            def fit(self, x_train, y_train):
+                return self
+
+            def decision_function(self, x_test):
+                return np.arange(len(x_test), dtype=float)
+
+        with patch("eval_scoring.LogisticRegression", RecordingLogisticRegression):
+            compute_detection_scores(
+                curves,
+                labels,
+                mode="logreg",
+                n_folds=3,
+                seed=539,
+                logreg_c=1.25,
+            )
+
+        self.assertEqual(configured_c_values, [1.25, 1.25, 1.25])
+
+    def test_logreg_rejects_non_positive_or_non_finite_c(self) -> None:
+        curves = np.arange(16, dtype=float).reshape(4, 4)
+        labels = np.array([0, 0, 1, 1])
+
+        for logreg_c in (0, -1, np.nan, np.inf):
+            with self.subTest(logreg_c=logreg_c):
+                with self.assertRaisesRegex(ValueError, "logreg_c must be a positive finite value"):
+                    compute_detection_scores(
+                        curves,
+                        labels,
+                        mode="logreg",
+                        n_folds=2,
+                        seed=539,
+                        logreg_c=logreg_c,
+                    )
+
+    def test_supervised_modes_use_all_layers_by_default(self) -> None:
+        curves = np.arange(60, dtype=float).reshape(6, 10)
+        labels = np.array([0, 0, 0, 1, 1, 1])
+        training_widths = []
+
+        class RecordingLogisticRegression:
+            def __init__(self, **kwargs):
+                pass
+
+            def fit(self, x_train, y_train):
+                training_widths.append(x_train.shape[1])
+                return self
+
+            def decision_function(self, x_test):
+                return np.arange(len(x_test), dtype=float)
+
+        with patch("eval_scoring.LogisticRegression", RecordingLogisticRegression):
+            compute_detection_scores(
+                curves,
+                labels,
+                mode="logreg",
+                n_folds=3,
+                seed=539,
+                layer_start=2,
+                layer_end=4,
+            )
+
+        self.assertEqual(training_widths, [10, 10, 10])
+
+    def test_selected_supervised_layer_scope_restricts_logreg_layers(self) -> None:
+        curves = np.arange(60, dtype=float).reshape(6, 10)
+        labels = np.array([0, 0, 0, 1, 1, 1])
+        training_widths = []
+        scored_widths = []
+
+        class RecordingLogisticRegression:
+            def __init__(self, **kwargs):
+                pass
+
+            def fit(self, x_train, y_train):
+                training_widths.append(x_train.shape[1])
+                return self
+
+            def decision_function(self, x_test):
+                scored_widths.append(x_test.shape[1])
+                return np.arange(len(x_test), dtype=float)
+
+        with patch("eval_scoring.LogisticRegression", RecordingLogisticRegression):
+            compute_detection_scores(
+                curves,
+                labels,
+                mode="logreg",
+                n_folds=3,
+                seed=539,
+                layer_start=2,
+                layer_end=4,
+                supervised_layer_scope="selected",
+            )
+
+        self.assertEqual(training_widths, [3, 3, 3])
+        self.assertEqual(scored_widths, [3, 3, 3])
+
+    def test_selected_supervised_layer_scope_restricts_fisher_layers(self) -> None:
+        curves = np.arange(60, dtype=float).reshape(6, 10)
+        labels = np.array([0, 0, 0, 1, 1, 1])
+        training_widths = []
+        scored_widths = []
+
+        def recording_fisher_scores(x_train, y_train, x_test, fisher_epsilon):
+            training_widths.append(x_train.shape[1])
+            scored_widths.append(x_test.shape[1])
+            return np.arange(len(x_test), dtype=float)
+
+        with patch("eval_scoring._fisher_scores", recording_fisher_scores):
+            compute_detection_scores(
+                curves,
+                labels,
+                mode="fisher",
+                n_folds=3,
+                seed=539,
+                layer_start=2,
+                layer_end=4,
+                supervised_layer_scope="selected",
+            )
+
+        self.assertEqual(training_widths, [3, 3, 3])
+        self.assertEqual(scored_widths, [3, 3, 3])
+
     def test_fisher_reports_only_out_of_fold_scores(self) -> None:
         curves = np.array(
             [

@@ -10,7 +10,15 @@ import random
 from sklearn.metrics import precision_recall_curve, auc
 from sklearn.metrics import roc_curve
 
-from eval_scoring import DEFAULT_FISHER_EPSILON, SCORING_MODES, compute_detection_scores
+from eval_scoring import (
+    DEFAULT_FISHER_EPSILON,
+    DEFAULT_LAYER_END,
+    DEFAULT_LAYER_START,
+    DEFAULT_LOGREG_C,
+    SCORING_MODES,
+    SUPERVISED_LAYER_SCOPES,
+    compute_detection_scores,
+)
 from eval_runtime import finish_evaluation, validate_model_path
 
 from llava.constants import (
@@ -108,6 +116,36 @@ def parse_args():
             "Ignored unless --scoring-mode fisher."
         ),
     )
+    parser.add_argument(
+        "--logreg-c",
+        type=float,
+        default=DEFAULT_LOGREG_C,
+        help=(
+            "Positive inverse regularization strength for LogisticRegression scoring. "
+            "Ignored unless --scoring-mode logreg."
+        ),
+    )
+    parser.add_argument(
+        "--layer-start",
+        type=int,
+        default=DEFAULT_LAYER_START,
+        help="Inclusive first layer used by trapz and selected supervised scoring.",
+    )
+    parser.add_argument(
+        "--layer-end",
+        type=int,
+        default=DEFAULT_LAYER_END,
+        help="Inclusive last layer used by trapz and selected supervised scoring.",
+    )
+    parser.add_argument(
+        "--supervised-layer-scope",
+        choices=SUPERVISED_LAYER_SCOPES,
+        default="all",
+        help=(
+            "Layer scope for Fisher/LogReg scoring. 'all' uses every layer score; "
+            "'selected' uses --layer-start through --layer-end."
+        ),
+    )
     return parser.parse_args()
 
 
@@ -143,9 +181,11 @@ def test(
     scoring_mode="fisher",
     n_folds=5,
     fisher_epsilon=DEFAULT_FISHER_EPSILON,
+    logreg_c=DEFAULT_LOGREG_C,
+    supervised_layer_scope="all",
     seed=539,
-    s=16,
-    e=29,
+    s=DEFAULT_LAYER_START,
+    e=DEFAULT_LAYER_END,
 ):
     selected_device = _resolve_device(device)
     model_name = get_model_name_from_path(model_path)
@@ -324,6 +364,8 @@ def test(
         layer_start=s,
         layer_end=e,
         fisher_epsilon=fisher_epsilon,
+        logreg_c=logreg_c,
+        supervised_layer_scope=supervised_layer_scope,
     )
     return label_all, scores
 
@@ -370,9 +412,11 @@ if __name__ == "__main__":
                 scoring_mode=args.scoring_mode,
                 n_folds=args.n_folds,
                 fisher_epsilon=args.fisher_epsilon,
+                logreg_c=args.logreg_c,
+                supervised_layer_scope=args.supervised_layer_scope,
                 seed=args.seed,
-                s=16,
-                e=29,
+                s=args.layer_start,
+                e=args.layer_end,
             )
             AUPRC = evaluate_AUPRC(true_labels, scores)
             AUROC = evaluate_AUROC(true_labels, scores)            

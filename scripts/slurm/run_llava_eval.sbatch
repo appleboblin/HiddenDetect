@@ -15,7 +15,13 @@ CONDA_ENV="${CONDA_ENV:-llava}"
 MODEL_PATH="${MODEL_PATH:-model/llava-v1.6-vicuna-7b}"
 OUTPUT_PATH="${OUTPUT_PATH:-results/llava-result.csv}"
 LIMIT="${LIMIT:-}"
+SCORING_MODE="${SCORING_MODE:-fisher}"
+N_FOLDS="${N_FOLDS:-5}"
 FISHER_EPSILON="${FISHER_EPSILON:-1e-8}"
+LOGREG_C="${LOGREG_C:-0.5}"
+LAYER_START="${LAYER_START:-16}"
+LAYER_END="${LAYER_END:-29}"
+SUPERVISED_LAYER_SCOPE="${SUPERVISED_LAYER_SCOPE:-all}"
 
 cd "${SLURM_SUBMIT_DIR:-$(pwd)}"
 mkdir -p logs results
@@ -84,7 +90,13 @@ CMD=(
   "${PYTHON_BIN}" code/test.py
   --model-path "${MODEL_PATH}"
   --output-path "${OUTPUT_PATH}"
+  --scoring-mode "${SCORING_MODE}"
+  --n-folds "${N_FOLDS}"
   --fisher-epsilon "${FISHER_EPSILON}"
+  --logreg-c "${LOGREG_C}"
+  --layer-start "${LAYER_START}"
+  --layer-end "${LAYER_END}"
+  --supervised-layer-scope "${SUPERVISED_LAYER_SCOPE}"
 )
 if [[ -n "${LIMIT}" ]]; then
   CMD+=(--limit "${LIMIT}")
@@ -105,7 +117,13 @@ echo "Resolved MODEL_PATH: ${RESOLVED_MODEL_PATH}"
 echo "OUTPUT_PATH: ${OUTPUT_PATH}"
 echo "Resolved OUTPUT_PATH: ${RESOLVED_OUTPUT_PATH}"
 echo "LIMIT: ${LIMIT:-unset}"
+echo "SCORING_MODE: ${SCORING_MODE}"
+echo "N_FOLDS: ${N_FOLDS}"
 echo "FISHER_EPSILON: ${FISHER_EPSILON}"
+echo "LOGREG_C: ${LOGREG_C}"
+echo "LAYER_START: ${LAYER_START}"
+echo "LAYER_END: ${LAYER_END}"
+echo "SUPERVISED_LAYER_SCOPE: ${SUPERVISED_LAYER_SCOPE}"
 
 "${CMD[@]}"
 

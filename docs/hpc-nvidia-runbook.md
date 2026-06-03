@@ -92,7 +92,52 @@ Primary SLURM log locations from the script:
 sbatch scripts/slurm/run_llava_eval.sbatch
 ```
 
-## 5) Optional Qwen run
+## 5) Comparison table (LLaVA)
+
+Submit the five requested LLaVA comparison rows and a dependent summary job:
+
+```bash
+bash scripts/slurm/submit_llava_comparison_table.sh
+```
+
+This writes per-row CSVs under `results/llava-comparison-table/` and queues a
+summary CSV at `results/llava-comparison-summary.csv` with columns:
+`Experiment`, `Dataset Name`, `AUPRC`, and `AUROC`.
+
+Rows submitted:
+
+- `paper-default`: `trapz`, layers `16..29`
+- `fisher-1e-8-all-layers`: `fisher`, epsilon `1e-8`, all layers
+- `fisher-1e-8-paper-layers`: `fisher`, epsilon `1e-8`, layers `16..29`
+- `logreg-c-1-all-layers`: `logreg`, `C=1`, all layers
+- `logreg-c-0.5-all-layers`: `logreg`, `C=0.5`, all layers
+
+Useful overrides:
+
+```bash
+MODEL_PATH=/path/to/model LIMIT=1 bash scripts/slurm/submit_llava_comparison_table.sh
+SBATCH_ARGS="-p <partition> -A <account> -t 04:00:00 --constraint=h200" bash scripts/slurm/submit_llava_comparison_table.sh
+RESULTS_DIR=results/table-run SUMMARY_PATH=results/table-run-summary.csv bash scripts/slurm/submit_llava_comparison_table.sh
+```
+
+## 6) LogReg C sweep (LLaVA)
+
+Run the default C sweep (`0.5`, `1`) as a SLURM array:
+
+```bash
+sbatch scripts/slurm/run_llava_logreg_c_sweep.sbatch
+```
+
+Override the C values with a matching array range:
+
+```bash
+LOGREG_C_VALUES="0.25 0.5 1 2" sbatch --array=0-3 scripts/slurm/run_llava_logreg_c_sweep.sbatch
+```
+
+Each task writes one result CSV, for example
+`results/llava-logreg-c-0.5.csv`.
+
+## 7) Optional Qwen run
 
 Smoke:
 
@@ -106,7 +151,7 @@ Full:
 sbatch scripts/slurm/run_qwen_eval.sbatch
 ```
 
-## 6) Overrides without code edits
+## 8) Overrides without code edits
 
 Scheduler/account/time/GPU override:
 
@@ -118,6 +163,14 @@ Model/output override:
 
 ```bash
 MODEL_PATH=/path/to/model OUTPUT_PATH=/path/to/results.csv sbatch scripts/slurm/run_llava_eval.sbatch
+```
+
+Scoring override:
+
+```bash
+SCORING_MODE=trapz LAYER_START=16 LAYER_END=29 sbatch scripts/slurm/run_llava_eval.sbatch
+SCORING_MODE=fisher FISHER_EPSILON=1e-8 SUPERVISED_LAYER_SCOPE=selected sbatch scripts/slurm/run_llava_eval.sbatch
+SCORING_MODE=logreg LOGREG_C=1 SUPERVISED_LAYER_SCOPE=all sbatch scripts/slurm/run_llava_eval.sbatch
 ```
 
 You can also change the Conda env used by batch jobs by name:
@@ -133,10 +186,12 @@ so SLURM activates the exact environment that contains the dependencies:
 CONDA_ENV_PREFIX=/full/path/to/the/env sbatch scripts/slurm/run_llava_eval.sbatch
 ```
 
-## 7) Where results land
+## 9) Where results land
 
 - LLaVA batch default: `results/llava-result.csv`
 - Qwen batch default: `results/qwen-result.csv`
+- LLaVA comparison table default: `results/llava-comparison-summary.csv`
+- LLaVA LogReg C sweep default: `results/llava-logreg-c-<C>.csv`
 
 Example checks:
 
@@ -146,7 +201,7 @@ head -n 5 results/llava-result.csv
 head -n 5 results/qwen-result.csv
 ```
 
-## 8) Troubleshooting
+## 10) Troubleshooting
 
 - `conda: command not found`
   - Confirm the cluster provides a `conda` module and that `module load conda` works in the batch environment.

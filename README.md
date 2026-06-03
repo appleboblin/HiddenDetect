@@ -84,6 +84,18 @@ Full run:
 sbatch scripts/slurm/run_llava_eval.sbatch
 ```
 
+Comparison table:
+
+```bash
+bash scripts/slurm/submit_llava_comparison_table.sh
+```
+
+LogReg C sweep:
+
+```bash
+LOGREG_C_VALUES="0.25 0.5 1 2" sbatch --array=0-3 scripts/slurm/run_llava_logreg_c_sweep.sbatch
+```
+
 Optional H200 run:
 
 ```bash
@@ -106,6 +118,12 @@ Override output/model paths:
 
 ```bash
 MODEL_PATH=/path/to/model OUTPUT_PATH=/path/to/results.csv sbatch scripts/slurm/run_llava_eval.sbatch
+```
+
+Override LLaVA scoring:
+
+```bash
+SCORING_MODE=logreg LOGREG_C=1 SUPERVISED_LAYER_SCOPE=all sbatch scripts/slurm/run_llava_eval.sbatch
 ```
 
 ---
