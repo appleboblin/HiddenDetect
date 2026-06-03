@@ -112,6 +112,22 @@ Rows submitted:
 - `logreg-c-1-all-layers`: `logreg`, `C=1`, all layers
 - `logreg-c-0.5-all-layers`: `logreg`, `C=0.5`, all layers
 
+Paper-based LLaVA AUROC reference:
+
+The `paper-default` row is paper-based rather than a guaranteed exact
+reproduction of the published paper. It uses the paper-style unsupervised
+trapezoid score over selected layers `16..29`, but results can still differ
+from the paper if the model checkpoint, dataset snapshot, data sampling,
+preprocessing, random seed, or dependency stack differs.
+
+| Dataset | AUROC |
+| --- | ---: |
+| XSTest | 0.868 |
+| FigTxt | 0.976 |
+| MM-SafetyBench | 0.997 |
+| FigImg | 0.846 |
+| JailBreakV-28K | 0.932 |
+
 Useful overrides:
 
 ```bash
