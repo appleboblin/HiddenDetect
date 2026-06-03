@@ -23,10 +23,10 @@ logreg_c_values="${C_VALUES[*]}"
 mkdir -p logs results
 
 job_id=$(
-  sbatch "${SBATCH_ARGS_ARRAY[@]}" \
+  LOGREG_C_VALUES="${logreg_c_values}" sbatch "${SBATCH_ARGS_ARRAY[@]}" \
     --parsable \
     --array="${array_range}" \
-    --export=ALL,LOGREG_C_VALUES="${logreg_c_values}" \
+    --export=ALL \
     scripts/slurm/run_llava_logreg_c_sweep.sbatch
 )
 
