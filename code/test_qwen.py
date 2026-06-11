@@ -1,6 +1,6 @@
+import argparse
 import torch
 import torch.nn.functional as N
-import csv
 import numpy as np
 import requests
 from PIL import Image
@@ -9,8 +9,9 @@ import re
 import random
 from sklearn.metrics import precision_recall_curve, auc
 from sklearn.metrics import roc_curve
-import os
 from transformers import AutoModelForCausalLM, AutoTokenizer
+
+from eval_runtime import finish_evaluation, validate_model_path
 from load_datasets import *
 
 refusal_lst = [
@@ -20,6 +21,51 @@ refusal_lst = [
     "shame", "conspiracy",
     "Subject", "contrary", "shouldn"
 ]
+
+def parse_args():
+    parser = argparse.ArgumentParser(description="Run HiddenDetect evaluation with Qwen-VL.")
+    parser.add_argument(
+        "--model-path",
+        default="./model/Qwen-VL-Chat",
+        help="Path to the Qwen-VL model directory.",
+    )
+    parser.add_argument(
+        "--output-path",
+        default="result_qwen.csv",
+        help="Where to write CSV evaluation results.",
+    )
+    parser.add_argument(
+        "--limit",
+        type=int,
+        default=None,
+        help="Optional max number of samples per dataset for smoke tests.",
+    )
+    parser.add_argument(
+        "--seed",
+        type=int,
+        default=539,
+        help="Random seed used before dataset sampling.",
+    )
+    parser.add_argument(
+        "--device",
+        default="cuda" if torch.cuda.is_available() else "cpu",
+        help='Execution device (for example: "cuda" or "cpu").',
+    )
+    return parser.parse_args()
+
+
+def _resolve_device(device_name: str) -> torch.device:
+    device = torch.device(device_name)
+    if device.type == "cuda" and not torch.cuda.is_available():
+        raise ValueError("CUDA device requested but torch.cuda.is_available() is False.")
+    return device
+
+
+def _limit_dataset(dataset, limit):
+    if limit is None:
+        return dataset
+    return dataset[:limit]
+
 
 def make_context(
     tokenizer,
@@ -96,8 +142,14 @@ def make_context(
         raise NotImplementedError(f"Unknown chat format {chat_format!r}")
     return raw_text, context_tokens
 
-def test(dataset, model_path, s=21, e=24):
-    model = AutoModelForCausalLM.from_pretrained(model_path, device_map="cuda", trust_remote_code=True).eval()
+def test(dataset, model_path, device, s=21, e=24):
+    selected_device = _resolve_device(device)
+    device_map = "auto" if selected_device.type == "cuda" else "cpu"
+    model = AutoModelForCausalLM.from_pretrained(
+        model_path,
+        device_map=device_map,
+        trust_remote_code=True,
+    ).eval()
     tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True)
     vocab_size = model.get_input_embeddings().weight.shape[0]
 
@@ -128,7 +180,7 @@ def test(dataset, model_path, s=21, e=24):
         elements.append({"text": sample["txt"]})
         query = tokenizer.from_list_format(elements)
         raw_text, context_tokens = make_context(tokenizer=tokenizer, query=query)
-        input_ids = torch.tensor([context_tokens]).to('cuda')
+        input_ids = torch.tensor([context_tokens]).to(selected_device)
 
         with torch.no_grad():
             outputs = model(input_ids, output_hidden_states=True)
@@ -163,9 +215,15 @@ def evaluate_AUROC(true_labels, scores):
     return auroc
 
 if __name__ == "__main__":
-    model_path = "./model/Qwen-VL-Chat"
+    args = parse_args()
+    random.seed(args.seed)
+    np.random.seed(args.seed)
+
+    model_path = validate_model_path(args.model_path)
+    print(f"Using model path: {model_path}")
     datasets = {}
     results = {}
+    failed_datasets = []
 
     datasets["XSTest"] = load_XSTest()
     datasets["FigTxt"] = load_FigTxt()
@@ -173,13 +231,14 @@ if __name__ == "__main__":
     datasets["FigImg + MM-Vet"] = load_FigImg() + load_mm_vet()
     datasets["JBV28K_JBtxt + MM-Vet"] = load_JailBreakV_JBtxt() + load_mm_vet()
     datasets["JBV28K_JBtxt_SDimg + MM-Vet"] = load_JailBreakV_JBtxt_SDimg() + load_mm_vet()
+    datasets = {name: _limit_dataset(dataset, args.limit) for name, dataset in datasets.items()}
     total_datasets = len(datasets)
     print(f"Starting evaluation of {total_datasets} datasets...")
 
     for idx, (dataset_name, dataset) in enumerate(datasets.items(), 1):
         print(f"Processing dataset {idx}/{total_datasets}: {dataset_name}")
         try:
-            true_labels, scores = test(dataset, model_path, s=21, e=24)
+            true_labels, scores = test(dataset, model_path, args.device, s=21, e=24)
             AUPRC = evaluate_AUPRC(true_labels, scores)
             AUROC = evaluate_AUROC(true_labels, scores)
             results[dataset_name] = (AUPRC, AUROC)
@@ -187,16 +246,7 @@ if __name__ == "__main__":
             print(f"AUROC for {dataset_name}: {AUROC}")
         except Exception as e:
             print(f"Error processing {dataset_name}: {str(e)}")
+            failed_datasets.append(dataset_name)
             continue
 
-    output_path = "result_qwen.csv"
-    try:
-        with open(output_path, "w", newline="") as csvfile:
-            writer = csv.writer(csvfile)
-            writer.writerow(["Dataset Name", "AUPRC", "AUROC"])
-            for dataset_name, result in results.items():
-                if result is not None:
-                    writer.writerow([dataset_name, f"{result[0]:.4f}", f"{result[1]:.4f}"])
-        print(f"Results successfully written to {output_path}")
-    except Exception as e:
-        print(f"Error writing to CSV: {str(e)}")
+    finish_evaluation(args.output_path, results, failed_datasets)

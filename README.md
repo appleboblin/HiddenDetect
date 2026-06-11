@@ -23,6 +23,7 @@ We propose **HiddenDetect**, a tuning-free framework leveraging internal model a
 ## 📑 Contents
 
 - [Install](#-install)  
+- [HPC NVIDIA GPU](#-hpc-nvidia-gpu)  
 - [Base Model](#-base-model)  
 - [Dataset](#-dataset)  
 - [Demo](#-demo)  
@@ -47,6 +48,82 @@ pip install -e .
 git clone https://github.com/leigest519/HiddenDetect.git
 cd HiddenDetect
 pip install -r requirements.txt
+```
+
+---
+
+## 🖥️ HPC NVIDIA GPU
+
+Use the HPC runbook for the full NVIDIA workflow, including LLaVA setup, SLURM submission, overrides, and troubleshooting:
+
+- [HPC NVIDIA End-to-End Runbook](docs/hpc-nvidia-runbook.md)
+
+Quick setup:
+
+```bash
+git switch hpc-nvidia
+bash scripts/hpc/setup_nvidia_env.sh
+```
+
+The setup script creates a Conda environment named `llava`, installs LLaVA from a pinned local checkout under `src/llava`, then installs HiddenDetect dependencies. CUDA verification should run inside an interactive GPU allocation or a SLURM job, not on a login node:
+
+```bash
+conda activate llava
+python scripts/hpc/check_nvidia_cuda.py
+```
+
+Smoke test:
+
+```bash
+LIMIT=1 sbatch scripts/slurm/run_llava_eval.sbatch
+```
+
+Full run:
+
+```bash
+sbatch scripts/slurm/run_llava_eval.sbatch
+```
+
+Comparison table:
+
+```bash
+bash scripts/slurm/submit_llava_comparison_table.sh
+```
+
+LogReg C sweep:
+
+```bash
+LOGREG_C_VALUES="0.25 0.5 1 2" sbatch --array=0-3 scripts/slurm/run_llava_logreg_c_sweep.sbatch
+```
+
+Optional H200 run:
+
+```bash
+sbatch --constraint=h200 scripts/slurm/run_llava_eval.sbatch
+```
+
+Model weights must be staged under `model/` or passed explicitly, for example:
+
+```bash
+MODEL_PATH=/path/to/model sbatch scripts/slurm/run_llava_eval.sbatch
+```
+
+Override scheduler parameters without editing code:
+
+```bash
+sbatch -p <partition> -A <account> -t 04:00:00 --constraint=h200 scripts/slurm/run_llava_eval.sbatch
+```
+
+Override output/model paths:
+
+```bash
+MODEL_PATH=/path/to/model OUTPUT_PATH=/path/to/results.csv sbatch scripts/slurm/run_llava_eval.sbatch
+```
+
+Override LLaVA scoring:
+
+```bash
+SCORING_MODE=logreg LOGREG_C=1 SUPERVISED_LAYER_SCOPE=all sbatch scripts/slurm/run_llava_eval.sbatch
 ```
 
 ---
